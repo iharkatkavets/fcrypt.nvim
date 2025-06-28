@@ -10,5 +10,8 @@ return {
   build = 'make',
   version = '*',
   cmd = { 'FCryptDecryptBuf', 'FCryptEncryptBuf', 'FCryptVersion', 'FCryptLogs' },
+  config = function()
+    require('fcrypt').setup()
+  end,
 }
 ```
