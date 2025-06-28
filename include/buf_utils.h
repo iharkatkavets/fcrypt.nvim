@@ -1,0 +1,27 @@
+/* buf_utils.h */
+
+#ifndef BUF_UTILS_H
+#define BUF_UTILS_H
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <stddef.h>
+#include <string.h>
+
+static inline size_t write_mem(uint8_t *dst, const void *src, size_t len) {
+  if (dst) {
+    memcpy(dst, src, len);
+  }
+  return len;
+}
+
+static inline size_t write_u16_le_buf(uint8_t *dst, uint16_t value) {
+  if (dst) {
+    dst[0] = value & 0xFF;
+    dst[1] = value >> 8;
+  }
+  return 2;
+}
+
+#endif
+

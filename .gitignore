@@ -1,0 +1,5 @@
+bin
+tmp
+build
+.local
+lua/fcrypt/fcrypt_lua_mod.so
