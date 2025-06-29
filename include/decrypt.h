@@ -3,6 +3,8 @@
 #ifndef FCRYPT_DECRYPT_H
 #define FCRYPT_DECRYPT_H
 
+#include <stdint.h>
+
 #include "opts_utils.h"
 
 int fcrypt_decrypt_buf(

@@ -5,6 +5,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 int file_exist(const char *path);
 int write_le16(int outfd, uint16_t value);

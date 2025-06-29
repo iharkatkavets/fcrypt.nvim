@@ -133,7 +133,7 @@ int fcrypt_resolve_hint(uint8_t **hint_out, size_t *hint_len_out, options opts) 
 }
 
 size_t fcrypt_gen_nonce(uint8_t *buf, size_t size) {
-  char nonce24_str[size*2+1];
+  // char nonce24_str[size*2+1];
   size_t result; 
 
   if (!(result = fcrypt_gen_bytes(buf, size))) {
