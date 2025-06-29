@@ -41,7 +41,13 @@ $(TOOL_PATH): $(TOOL_OBJ) $(COMMON_OBJ)
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-lua: $(LUA_MODULE_PATH)
+lua: check_luajit $(LUA_MODULE_PATH)
+
+check_luajit:
+	@if ! pkg-config --exists luajit; then \
+		echo "LuaJIT development files not found. Please install LuaJIT dev files: libluajit-5.1-dev (Linux) or brew install luajit (macOS)."; \
+		exit 1; \
+		fi
 
 $(LUA_MODULE_PATH): $(LUA_SRC) $(COMMON_SRC)
 	$(CC) $(CFLAGS) -fPIC -shared $(LUAJIT_INCLUDE) $(LUAJIT_LIB) -o $@ $^
