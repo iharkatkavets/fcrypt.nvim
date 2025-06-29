@@ -33,7 +33,8 @@ LUA_MODULE_PATH = lua/fcrypt/$(LUA_MODULE)
 
 $(shell mkdir -p $(BUILD_DIR))
 
-all: $(TOOL_PATH) $(LUA_MODULE_PATH)
+
+all: check_luajit $(TOOL_PATH) $(LUA_MODULE_PATH)
 
 $(TOOL_PATH): $(TOOL_OBJ) $(COMMON_OBJ)
 	$(CC) $(CFLAGS) -o $@ $^
