@@ -48,7 +48,7 @@ end
 
 function M.error(msg)
 	append(string.format("%s [ERROR] %s", timestamp(), msg))
-	vim.notify(msg, vim.log.levels.ERROR)
+	vim.notify(msg, vim.log.levels.WARN)
 end
 
 function M.present()

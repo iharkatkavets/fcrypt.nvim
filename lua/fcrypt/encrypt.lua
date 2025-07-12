@@ -9,13 +9,13 @@ local M = {}
 local function ask_for_input_parameters(callback)
 	local password1 = vim.fn.inputsecret("Password: ")
 	if not password1 or password1 == "" then
-		logs.warning("No password entered. Aborting.")
+		logs.warning("\nNo password entered. Aborting.")
 		return
 	end
 
 	local password2 = vim.fn.inputsecret("Repeat password: ")
 	if password1 ~= password2 then
-		logs.error("Passwords do not match. Aborting.")
+		logs.error("\nPasswords do not match. Aborting.")
 		return
 	end
 
