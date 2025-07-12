@@ -17,6 +17,9 @@ SRC_DIR = src
 TEST_DIR := test
 INCLUDE_DIR = include
 BUILD_DIR = build
+BIN_DIR = bin
+LOG_DIR := test_logs
+TEST_LOGS_DIR := $(patsubst %, $(LOG_DIR)/%.log, $(notdir $(TEST_BINS)))
 
 COMMON_SRC = $(SRC_DIR)/common_utils.c $(SRC_DIR)/convert_utils.c $(SRC_DIR)/input.c $(SRC_DIR)/sha256.c $(SRC_DIR)/xchacha20.c $(SRC_DIR)/verbose.c $(SRC_DIR)/opts_utils.c $(SRC_DIR)/encrypt.c $(SRC_DIR)/decrypt.c $(SRC_DIR)/file_utils.c $(SRC_DIR)/random.c
 TOOL_SRC = $(SRC_DIR)/main.c
@@ -28,18 +31,26 @@ TEST_BINS := $(TEST_SRCS:$(TEST_DIR)/%.c=$(BUILD_DIR)/%)
 COMMON_OBJ = $(patsubst $(SRC_DIR)/%.c, $(BUILD_DIR)/%.o, $(COMMON_SRC))
 TOOL_OBJ = $(patsubst $(SRC_DIR)/%.c, $(BUILD_DIR)/%.o, $(TOOL_SRC))
 
+TOOL = fcrypt
+TOOL_PATH = $(BIN_DIR)/$(TOOL)
 LUA_MODULE = fcrypt_lua_mod.so
 LUA_MODULE_PATH = lua/fcrypt/$(LUA_MODULE)
 
-$(shell mkdir -p $(BUILD_DIR))
+$(shell mkdir -p $(BUILD_DIR) $(BIN_DIR))
 
 all: $(TOOL_PATH) $(LUA_MODULE_PATH)
+
+$(TOOL): $(TOOL_PATH)
 
 $(TOOL_PATH): $(TOOL_OBJ) $(COMMON_OBJ)
 	$(CC) $(CFLAGS) -o $@ $^
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
+
+$(LUA_MODULE_PATH): $(LUA_SRC) $(COMMON_SRC)
+	@$(MAKE) check_luajit
+	$(CC) $(CFLAGS) -fPIC -shared $(LUAJIT_INCLUDE) $(LUAJIT_LIB) -o $@ $^
 
 lua: check_luajit $(LUA_MODULE_PATH)
 
@@ -49,11 +60,8 @@ check_luajit:
 		exit 1; \
 		fi
 
-$(LUA_MODULE_PATH): $(LUA_SRC) $(COMMON_SRC)
-	$(CC) $(CFLAGS) -fPIC -shared $(LUAJIT_INCLUDE) $(LUAJIT_LIB) -o $@ $^
-
 clean:
-	rm -rf $(BUILD_DIR) $(LUA_MODULE_PATH)
+	rm -rf $(BUILD_DIR) $(BIN_DIR) $(TEST_LOGS_DIR) $(LUA_MODULE_PATH)
 
 debug:
 	$(MAKE) BUILD=debug
@@ -65,6 +73,17 @@ $(BUILD_DIR)/test_%: $(TEST_DIR)/test_%.c $(COMMON_OBJ)
 	$(CC) $(CFLAGS) $^ -o $@
 
 test: $(TEST_BINS)
-	@for bin in $(TEST_BINS); do echo "Running $$bin..."; $$bin || exit 1; done
+	@mkdir -p $(LOG_DIR)
+	@for bin in $(TEST_BINS); do \
+		log="$(LOG_DIR)/$$(basename $$bin).log"; \
+		printf "Running $$bin... "; \
+		if $$bin > "$$log" 2>&1; then \
+			echo " OK"; \
+		else \
+			echo " FAIL (see $$log)"; \
+			tail -n 10 "$$log"; \
+			exit 1; \
+		fi \
+	done
 
-.PHONY: all clean lua test
+.PHONY: all clean lua test check_luajit

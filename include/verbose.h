@@ -5,6 +5,4 @@
 
 extern int verbose;
 
-void vlog(const char *format, ...);
-
 #endif

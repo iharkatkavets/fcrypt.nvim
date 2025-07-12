@@ -5,25 +5,27 @@
 
 #include <getopt.h>
 #include <stdlib.h>
+#include <stdbool.h>
 
 typedef struct {
-    int encrypt;
-    int decrypt;
+    bool encrypt;
+    bool decrypt;
     char *input_file;
     char *output_file;
     char *password;
-    int show_help;
-    int show_version;
-    int verbose;
+    bool show_help;
+    bool show_version;
+    bool verbose;
     int padsize;
     char *hint;
-    int no_hint;
-} Options;
+    bool no_hint;
+} ArgOptions;
 
-typedef Options options;
+typedef ArgOptions options;
 
+ArgOptions default_options(void);
 void print_usage(const char *program_name);
 void print_version(const char *program_name);
-int parse_arguments(options *opts, int argc, char **argv);
+int parse_arguments(ArgOptions *opts, int argc, char **argv);
 
 #endif

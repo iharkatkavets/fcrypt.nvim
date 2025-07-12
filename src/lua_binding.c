@@ -17,22 +17,32 @@ static int lua_fcrypt_decrypt_buf(lua_State *L) {
   size_t in_len, key_len;
   const char *in_str = luaL_checklstring(L, 1, &in_len);
   const char *key_str = luaL_checklstring(L, 2, &key_len);
-  size_t out_buf_size = 0;
-  uint8_t *out_buf = NULL;
+  size_t required_len = 0;
 
-  int ret = fcrypt_decrypt_buf(
+  int result = fcrypt_decrypt_buf(
     (const uint8_t *)in_str, in_len,
     (uint8_t *)key_str, key_len,
-    &out_buf, &out_buf_size
-  );
+    NULL, 0, 
+    &required_len);
 
-  if (ret != EXIT_SUCCESS) {
-    free(out_buf);
+  if (result != EXIT_SUCCESS) {
     return luaL_error(L, "decryption failed");
   }
 
-  lua_pushlstring(L, (const char *)out_buf, out_buf_size);
-  free(out_buf);
+  uint8_t *decrypted_buf = malloc(required_len);
+  size_t decrypted_buf_len = 0;
+  result = fcrypt_decrypt_buf(
+    (const uint8_t *)in_str, in_len,
+    (uint8_t *)key_str, key_len,
+    decrypted_buf, required_len, 
+    &decrypted_buf_len);
+
+  if (result != EXIT_SUCCESS) {
+    return luaL_error(L, "decryption failed");
+  }
+
+  lua_pushlstring(L, (const char *)decrypted_buf, decrypted_buf_len);
+  free(decrypted_buf);
   return 1;
 }
 

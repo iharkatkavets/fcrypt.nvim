@@ -23,5 +23,23 @@ static inline size_t write_u16_le_buf(uint8_t *dst, uint16_t value) {
   return 2;
 }
 
-#endif
+static inline size_t read_u16_le_buf(const uint8_t *buf, uint16_t *out) {
+    if (!buf || !out) return 0;
+    *out = (uint16_t)buf[0] | ((uint16_t)buf[1] << 8);
+    return 2;
+}
 
+static inline size_t read_mem(const uint8_t *in, uint8_t *out, size_t len) {
+  if (out) {
+    memcpy(out, in, len);
+  }
+  return len;
+}
+
+static inline size_t read_u16_buf(const uint8_t *buf, uint16_t *out) {
+    if (!buf || !out) return 0;
+    *out = (uint16_t)buf[1] | ((uint16_t)buf[0] << 8);
+    return 2;
+}
+
+#endif

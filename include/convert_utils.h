@@ -6,6 +6,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-void bytes_to_hexstr(char *, uint8_t *, size_t);
+void bytes_to_hexstr(char *, const uint8_t *, size_t);
 
 #endif

@@ -1,6 +1,7 @@
 /* decryptor.c */
 
 #include "decrypt.h"
+#include "buf_utils.h"
 #include "common_utils.h"
 #include "xchacha20.h"
 #include "convert_utils.h"
@@ -25,7 +26,8 @@ int fcrypt_decrypt_buf(
   size_t in_len,
   uint8_t *key,
   size_t key_len,
-  uint8_t **out_buf,
+  uint8_t *out_buf, // NULL for sizing
+  size_t out_buf_capacity, // 0 for sizing
   size_t *out_len
 ) {
   uint16_t version = 0;
@@ -33,57 +35,7 @@ int fcrypt_decrypt_buf(
   uint16_t hint_len = 0;
   uint8_t *key_hash32 = NULL;
   char key_hash_str[32*2+1];
-
-  if (fcrypt_extract_version_buf(in_buf, in_len, &version)) {
-    LOG_ERR("Failed to extract version.\n");
-    return EXIT_FAILURE;
-  }
-  in_buf += 2;
-  in_len -= 2;
-
-  if (version > 0) {
-    if (fcrypt_extract_hint_len_buf(in_buf, in_len, &hint_len)) {
-      LOG_ERR("Failed to extract hint.\n");
-      return EXIT_FAILURE;
-    }
-    in_buf += 2;
-    in_len -= 2;
-    if (hint_len == 0) {
-      fprintf(stderr, "No password hint available.\n");
-    } else {
-      hint = malloc(hint_len);
-      if (hint == NULL) {
-        LOG_ERR("Failed to allocate memory for hint.\n");
-        return EXIT_FAILURE;
-      }
-      if (fcrypt_extract_hint_buf(in_buf, in_len, hint, hint_len)) {
-        free(hint);
-        LOG_ERR("Failed to extract hint.\n");
-        return EXIT_FAILURE;
-      }
-      in_buf += hint_len;
-      in_len -= hint_len;
-      free(hint);
-    }
-  }
-
-  key_hash32 = fcrypt_compute_password_hash(key, key_len);
-  bytes_to_hexstr(key_hash_str, key_hash32, 32);
-  vlog("SHA256(key): %s\n", key_hash_str);
-
-  if (fcrypt_decrypt_payload_buf(in_buf, in_len, key_hash32, out_buf, out_len)) {
-    return EXIT_FAILURE;
-  }
-
-  return EXIT_SUCCESS;
-} 
-
-int fcrypt_decrypt_payload_buf(
-    const uint8_t *in_buf,
-    size_t in_len,
-    const uint8_t *key_hash32,
-    uint8_t **out_buf,
-    size_t *out_len) {
+  size_t read = 0;
   XChaCha_ctx ctx;
   uint16_t pad_len = 0;
   uint8_t nonce24[24];
@@ -92,74 +44,94 @@ int fcrypt_decrypt_payload_buf(
   uint8_t enc_buf[4096];
   uint8_t dec_buf[4096];
   ssize_t chunk_len = 0;
-  ssize_t write_len = 0;
+  char key_hash_str2[32*2+1];
+  size_t wrote = 0;
 
-  if (in_len < 24) {
-    LOG_ERR("Wrong buffer. Failed to read 24 bytes of nonce.\n");
-    return EXIT_FAILURE;
+#define CHECK_READ(N) \
+    do { \
+        if (in_buf && read + (N) > in_len) return EXIT_FAILURE; \
+    } while(0)
+
+#define READ_PTR (in_buf ? in_buf + read : NULL)
+
+#define CHECK_WRITE(N) \
+    do { \
+        if (out_buf && wrote + (N) > out_buf_capacity) return EXIT_FAILURE; \
+    } while(0)
+
+#define WRITE_PTR (out_buf ? out_buf + wrote : NULL)
+
+  CHECK_READ(2); read += read_u16_le_buf(READ_PTR, &version);
+  DLOG("Format version: %d", version);
+
+  if (version > 0) {
+    CHECK_READ(2); read += read_u16_le_buf(READ_PTR, &hint_len);
+    DLOG("Hint lenght: %d", hint_len);
+
+    if (hint_len == 0) {
+      fprintf(stderr, "No password hint available.\n");
+    } else {
+      hint = malloc(hint_len);
+      if (hint == NULL) {
+        LOG_ERR("Failed to allocate memory for hint");
+        return EXIT_FAILURE;
+      }
+
+      CHECK_READ(hint_len); read += read_mem(READ_PTR, hint, hint_len);
+      fprintf(stderr, "Hint: %s\n", hint);
+      free(hint);
+    }
   }
-  memcpy(nonce24, in_buf, 24);
-  in_len -= 24;
-  in_buf += 24;
+
+  key_hash32 = fcrypt_compute_password_hash(key, key_len);
+  bytes_to_hexstr(key_hash_str, key_hash32, 32);
+  DLOG("SHA256(key): %s\n", key_hash_str);
+  VERBOSE("SHA256(key): %s\n", key_hash_str);
+
+  CHECK_READ(24); read += read_mem(READ_PTR, nonce24, 24);
   bytes_to_hexstr(nonce24_str, nonce24, 24);
-  vlog("\nNonce[24]: %s", nonce24_str);
+  DLOG("\nNonce[24]: %s", nonce24_str);
+  VERBOSE("\nNonce[24]: %s", nonce24_str);
 
   xchacha_keysetup(&ctx, key_hash32, nonce24);
   xchacha_set_counter(&ctx, counter);
 
-  if (in_len < 2) {
-    LOG_ERR("Failed to extract 2 bytes of padsize.\n");
-    return EXIT_FAILURE;
-  }
-  memcpy(enc_buf, in_buf, 2);
-  in_len -= 2;
-  in_buf += 2;
+  CHECK_READ(2); read += read_mem(READ_PTR, enc_buf, 2);
 
   xchacha_decrypt_bytes(&ctx, enc_buf, (uint8_t*)&pad_len, 2);
-  vlog("Padsize: %u\n", pad_len);
+  DLOG("Padsize: %u\n", pad_len);
+  VERBOSE("Padsize: %u\n", pad_len);
 
   while (pad_len > 0) {
     chunk_len = MIN(pad_len, sizeof(enc_buf));
-    memcpy(enc_buf, in_buf, chunk_len);
-    in_len -= chunk_len;
-    in_buf += chunk_len;
+    CHECK_READ(chunk_len); read += read_mem(READ_PTR, enc_buf, chunk_len);
     xchacha_decrypt_bytes(&ctx, enc_buf, dec_buf, chunk_len);
     pad_len -= chunk_len;
   }
 
-  if (in_len < 32) {
-    LOG_ERR("Failed to read 32 bytes of encrypted key hash.\n");
-    return EXIT_FAILURE;
-  }
-
-  memcpy(enc_buf, in_buf, 32);
-  in_len -= 32;
-  in_buf += 32;
+  CHECK_READ(32); read += read_mem(READ_PTR, enc_buf, 32);
 
   xchacha_decrypt_bytes(&ctx, enc_buf, dec_buf, 32);
+  bytes_to_hexstr(key_hash_str2, dec_buf, 32);
+  DLOG("SHA256(key): %s\n", key_hash_str2);
   if (memcmp(dec_buf, key_hash32, 32) != 0) {
     LOG_ERR("Wrong password.\n");
     return EXIT_FAILURE;
   }
 
-  *out_buf = malloc(in_len);
-  if (*out_buf == NULL) {
-    LOG_ERR("Failed to allocate memory for output buffer.\n");
-    return EXIT_FAILURE;
-  }
-  *out_len = in_len;
-
-  while(in_len) {
-    chunk_len = MIN(sizeof(enc_buf), in_len);
-    memcpy(enc_buf, in_buf, chunk_len);
-    in_len -= chunk_len;
-    in_buf += chunk_len;
+  while(in_len-read) {
+    chunk_len = MIN(sizeof(enc_buf), in_len-read);
+    DLOG("chunk_len %zu in_len %zu read %zu", chunk_len, in_len, read);
+    CHECK_READ(chunk_len); read += read_mem(READ_PTR, enc_buf, chunk_len);
     xchacha_decrypt_bytes(&ctx, enc_buf, dec_buf, chunk_len);
-    memcpy(*out_buf+write_len, dec_buf, chunk_len);
-    write_len += chunk_len;
+    DLOG("before write");
+    CHECK_WRITE(chunk_len); wrote += write_mem(WRITE_PTR, dec_buf, chunk_len);
   }
+
+  *out_len = wrote;
+
   return EXIT_SUCCESS;
-}
+} 
 
 int fcrypt_decrypt_payload_fd(int infd, int outfd, const uint8_t *key_hash32) {
   XChaCha_ctx ctx;
@@ -173,33 +145,34 @@ int fcrypt_decrypt_payload_fd(int infd, int outfd, const uint8_t *key_hash32) {
   ssize_t read_size = 0;
 
   if (read(infd, nonce24, 24) != 24) {
-    fprintf(stderr, "Wrong input file. Can't read 24 bytes of nonce.\n");
+    LOG_ERR("Wrong input file. Can't read 24 bytes of nonce.\n");
     return EXIT_FAILURE;
   }
 
   bytes_to_hexstr(nonce24_str, nonce24, 24);
-  vlog("\nNonce[24]: %s", nonce24_str);
+  DLOG("Nonce[24]: %s\n", nonce24_str);
+  VERBOSE("Nonce[24]: %s\n", nonce24_str);
 
   xchacha_keysetup(&ctx, key_hash32, nonce24);
   xchacha_set_counter(&ctx, counter);
 
   if (read(infd, enc_buf, 2) != 2) {
-    fprintf(stderr, "Can't read 2 bytes of padsize.\n");
+    LOG_ERR("Can't read 2 bytes of padsize.\n");
     return EXIT_FAILURE;
   }
 
   xchacha_decrypt_bytes(&ctx, enc_buf, (uint8_t*)&padsize, 2);
-  vlog("Padsize: %u\n", padsize);
+  DLOG("Padsize: %u\n", padsize);
 
   while (padsize > 0) {
     chunk = MIN(padsize, sizeof(enc_buf));
     read_size = read(infd, enc_buf, chunk);
     if (read_size < 0) {
-      fprintf(stderr, "Can't read file.\n");
+      LOG_ERR("Can't read file.\n");
       return EXIT_FAILURE;
     }
     if (read_size != chunk) {
-      fprintf(stderr, "Wrong file or password.\n");
+      LOG_ERR("Wrong file or password.\n");
       return EXIT_FAILURE;
     }
     xchacha_decrypt_bytes(&ctx, enc_buf, dec_buf, chunk);
@@ -208,24 +181,24 @@ int fcrypt_decrypt_payload_fd(int infd, int outfd, const uint8_t *key_hash32) {
 
   read_size = read(infd, enc_buf, 32);
   if (read_size < 0) {
-    fprintf(stderr, "Can't read file.\n");
+    LOG_ERR("Can't read file.\n");
     return EXIT_FAILURE;
   }
   if (read_size != 32) {
-    fprintf(stderr, "Wrong file or password.\n");
+    LOG_ERR("Wrong file or password.\n");
     return EXIT_FAILURE;
   }
 
   xchacha_decrypt_bytes(&ctx, enc_buf, dec_buf, 32);
   if (memcmp(dec_buf, key_hash32, 32) != 0) {
-    fprintf(stderr, "Wrong password.\n");
+    LOG_ERR("Wrong password.\n");
     return EXIT_FAILURE;
   }
 
   while(true) {
     read_size = read(infd, enc_buf, sizeof(enc_buf));
     if (read_size<0) {
-      fprintf(stderr, "Can't read the input file %d.\n", __LINE__);
+      LOG_ERR("Can't read the input file.\n");
       return EXIT_FAILURE;
     }
     if (!read_size) {
@@ -233,25 +206,16 @@ int fcrypt_decrypt_payload_fd(int infd, int outfd, const uint8_t *key_hash32) {
     }
     xchacha_decrypt_bytes(&ctx, enc_buf, dec_buf, read_size);
     if ((write_bytes(outfd, dec_buf, read_size)) != read_size) {
-      fprintf(stderr, "Fail write to output file %d.\n", __LINE__);
+      LOG_ERR("Fail write to output file.\n");
       return EXIT_FAILURE;
     }
   }
   return EXIT_SUCCESS;
 }
 
-int fcrypt_extract_hint_fd(int infd, uint8_t **hint, uint16_t *hint_len) {
+int fcrypt_extract_hint_len_fd(int infd, uint16_t *hint_len) {
   uint16_t len = 0;
   if (read_le16(infd, &len) != 0) {
-    return EXIT_FAILURE;
-  }
-
-  *hint = malloc(len);
-  if (*hint == NULL) {
-    return EXIT_FAILURE;
-  }
-  if (read_bytes(infd, *hint, len) != len) {
-    free(*hint);
     return EXIT_FAILURE;
   }
 
@@ -259,19 +223,11 @@ int fcrypt_extract_hint_fd(int infd, uint8_t **hint, uint16_t *hint_len) {
   return EXIT_SUCCESS;
 }
 
-int fcrypt_extract_hint_len_buf(const uint8_t *buf, size_t len, uint16_t *hint_len) {
-  uint16_t hint_len_read = 0;
-
-  if (len < 2) {
+int fcrypt_extract_hint_fd(int infd, uint8_t *hint, uint16_t hint_len) {
+  if (read_bytes(infd, hint, hint_len) != hint_len) {
     return EXIT_FAILURE;
   }
 
-  hint_len_read = (uint16_t)(buf[0]) | (uint16_t)(buf[1]<<8);
-  if ((size_t)hint_len_read > len-2) {
-    return EXIT_FAILURE;
-  }
-
-  *hint_len = hint_len_read;
   return EXIT_SUCCESS;
 }
 
@@ -285,22 +241,14 @@ int fcrypt_extract_hint_buf(const uint8_t *buf, size_t len, uint8_t *hint, uint1
   return EXIT_SUCCESS;
 }
 
-int fcrypt_extract_version_fd(int infd, uint16_t *version) {
+int fcrypt_extract_format_version_fd(int infd, uint16_t *version) {
   if (read_le16(infd, version) != 0) {
     return EXIT_FAILURE;
   }
   return EXIT_SUCCESS;
 }
 
-int fcrypt_extract_version_buf(const uint8_t *buf, size_t len, uint16_t *version) {
-  if (len < 2) {
-    return EXIT_FAILURE;
-  }
-  *version = (uint16_t)buf[0] | ((uint16_t)buf[1] << 8);
-  return EXIT_SUCCESS;
-}
-
-int fcrypt_decrypt_from_opts(options opts) {
+int fcrypt_decrypt_from_opts(ArgOptions opts) {
   int infd, outfd = STDOUT_FILENO;
   uint8_t key_hash32[32];
   uint16_t version = 0;
@@ -312,22 +260,37 @@ int fcrypt_decrypt_from_opts(options opts) {
     verbose = 1;
   }
 
+  if (opts.output_file && file_exist(opts.output_file)) {
+    return EXIT_FAILURE;
+  }
+
   if (create_input_fd(opts.input_file, &infd)) {
     return EXIT_FAILURE;
   }
 
-  if (fcrypt_check_file_absent(opts.output_file)) {
-    close(infd);
-    return EXIT_FAILURE;
-  }
-
-  if (fcrypt_extract_version_fd(infd, &version)) {
+  if (fcrypt_extract_format_version_fd(infd, &version)) {
+    DLOG("Format version: %d", version);
     close(infd);
     return EXIT_FAILURE;
   }
 
   if (version > 0) {
-    if (fcrypt_extract_hint_fd(infd, &hint, &hint_len)) {
+    if (fcrypt_extract_hint_len_fd(infd, &hint_len)) {
+      DLOG("Hint lenght: %d", hint_len);
+      close(infd);
+      return EXIT_FAILURE;
+    }
+
+    hint = malloc(hint_len);
+    if (hint == NULL) {
+      LOG_ERR("Failed to allocate memory for hint");
+      free(hint);
+      close(infd);
+      return EXIT_FAILURE;
+    }
+    if (fcrypt_extract_hint_fd(infd, hint, hint_len)) {
+      LOG_ERR("Failed to read hint");
+      free(hint);
       close(infd);
       return EXIT_FAILURE;
     }
@@ -344,7 +307,8 @@ int fcrypt_decrypt_from_opts(options opts) {
     return EXIT_FAILURE;
   }
   bytes_to_hexstr(key_hash_str, key_hash32, 32);
-  vlog("SHA256(key): %s\n", key_hash_str);
+  DLOG("SHA256(key): %s\n", key_hash_str);
+  VERBOSE("SHA256(key): %s\n", key_hash_str);
 
   if (create_output_fd(opts.output_file, &outfd)) {
     close(infd);

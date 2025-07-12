@@ -113,3 +113,19 @@ int parse_arguments(options *opts, int argc, char **argv) {
 
   return EXIT_SUCCESS;
 }
+
+ArgOptions default_options(void) {
+    return (ArgOptions){
+        .encrypt = false,
+        .decrypt = false,
+        .input_file = NULL,
+        .output_file = NULL,
+        .password = NULL,
+        .padsize = -1,
+        .hint = NULL,
+        .no_hint = false,
+        .show_help = false,
+        .show_version = false,
+        .verbose = false,
+    };
+}

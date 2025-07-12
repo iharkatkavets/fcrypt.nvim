@@ -9,7 +9,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-int fcrypt_check_file_absent(const char *path);
+bool fcrypt_check_file_exists(const char *path);
 int fcrypt_resolve_encryption_key(uint8_t hash_out[32], options opts);
 int fcrypt_resolve_decryption_key(uint8_t hash_out[32], options opts);
 uint8_t *fcrypt_compute_password_hash(uint8_t *key, size_t keysize);

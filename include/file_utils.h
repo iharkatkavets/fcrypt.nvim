@@ -5,8 +5,10 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <stdbool.h>
 
-int file_exist(const char *path);
+bool file_exist(const char *path);
 int write_le16(int outfd, uint16_t value);
 int read_le16(int infd, uint16_t *value);
 ssize_t write_bytes(int outfd, const uint8_t *buf, ssize_t to_write);

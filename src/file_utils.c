@@ -5,7 +5,7 @@
 #include <errno.h>
 #include <fcntl.h>
 
-int file_exist(const char *path) {
+bool file_exist(const char *path) {
   return (access(path, F_OK) == 0);
 }
 
